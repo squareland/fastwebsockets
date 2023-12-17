@@ -164,6 +164,10 @@ mod mask;
 #[cfg_attr(docsrs, doc(cfg(feature = "upgrade")))]
 pub mod upgrade;
 
+#[cfg(feature = "upgrade")]
+#[cfg_attr(docsrs, doc(cfg(feature = "upgrade")))]
+pub use hyper_util::rt::TokioIo;
+
 #[cfg(feature = "unstable-split")]
 use std::future::Future;
 
