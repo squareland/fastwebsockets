@@ -164,6 +164,8 @@ mod mask;
 #[cfg_attr(docsrs, doc(cfg(feature = "upgrade")))]
 pub mod upgrade;
 
+pub use http_body_util as body;
+
 #[cfg(feature = "upgrade")]
 #[cfg_attr(docsrs, doc(cfg(feature = "upgrade")))]
 pub use hyper_util::rt::TokioIo;
