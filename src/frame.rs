@@ -284,7 +284,7 @@ impl<'f> Frame<'f> {
     stream: &mut S,
   ) -> Result<(), std::io::Error>
   where
-    S: AsyncWriteExt + Unpin,
+    S: AsyncWriteExt + Unpin + Send,
   {
     use std::io::IoSlice;
 

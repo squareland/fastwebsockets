@@ -159,7 +159,6 @@ mod frame;
 #[cfg_attr(docsrs, doc(cfg(feature = "upgrade")))]
 pub mod handshake;
 mod mask;
-mod recv;
 /// HTTP upgrades.
 #[cfg(feature = "upgrade")]
 #[cfg_attr(docsrs, doc(cfg(feature = "upgrade")))]
@@ -180,10 +179,6 @@ pub use crate::frame::Frame;
 pub use crate::frame::OpCode;
 pub use crate::frame::Payload;
 pub use crate::mask::unmask;
-use crate::recv::SharedRecv;
-
-#[derive(Copy, Clone, Default)]
-struct UnsendMarker(std::marker::PhantomData<SharedRecv>);
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum Role {
@@ -214,14 +209,12 @@ pub(crate) struct ReadHalf {
 pub struct WebSocketRead<S> {
   stream: S,
   read_half: ReadHalf,
-  _marker: UnsendMarker,
 }
 
 #[cfg(feature = "unstable-split")]
 pub struct WebSocketWrite<S> {
   stream: S,
   write_half: WriteHalf,
-  _marker: UnsendMarker,
 }
 
 #[cfg(feature = "unstable-split")]
@@ -232,22 +225,22 @@ pub fn after_handshake_split<R, W>(
   role: Role,
 ) -> (WebSocketRead<R>, WebSocketWrite<W>)
 where
-  R: AsyncWriteExt + Unpin,
-  W: AsyncWriteExt + Unpin,
+  R: AsyncWriteExt + Unpin + Send,
+  W: AsyncWriteExt + Unpin + Send,
 {
   (
     WebSocketRead {
       stream: read,
       read_half: ReadHalf::after_handshake(role),
-      _marker: UnsendMarker::default(),
     },
     WebSocketWrite {
       stream: write,
       write_half: WriteHalf::after_handshake(role),
-      _marker: UnsendMarker::default(),
     },
   )
 }
+
+const RECV_SIZE: usize = 16384;
 
 #[cfg(feature = "unstable-split")]
 impl<'f, S> WebSocketRead<S> {
@@ -295,7 +288,7 @@ impl<'f, S> WebSocketRead<S> {
     send_fn: &mut impl FnMut(Frame<'f>) -> R,
   ) -> Result<Frame, WebSocketError>
   where
-    S: AsyncReadExt + Unpin,
+    S: AsyncReadExt + Unpin + Send,
     E: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
     R: Future<Output = Result<(), E>>,
   {
@@ -342,7 +335,7 @@ impl<'f, S> WebSocketWrite<S> {
     frame: Frame<'f>,
   ) -> Result<(), WebSocketError>
   where
-    S: AsyncWriteExt + Unpin,
+    S: AsyncWriteExt + Unpin + Send,
   {
     self.write_half.write_frame(&mut self.stream, frame).await
   }
@@ -353,7 +346,6 @@ pub struct WebSocket<S> {
   stream: S,
   write_half: WriteHalf,
   read_half: ReadHalf,
-  _marker: UnsendMarker,
 }
 
 impl<'f, S> WebSocket<S> {
@@ -380,12 +372,10 @@ impl<'f, S> WebSocket<S> {
   where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
   {
-    recv::init_once();
     Self {
       stream,
       write_half: WriteHalf::after_handshake(role),
       read_half: ReadHalf::after_handshake(role),
-      _marker: UnsendMarker::default(),
     }
   }
 
@@ -408,12 +398,10 @@ impl<'f, S> WebSocket<S> {
       WebSocketRead {
         stream: r,
         read_half: read,
-        _marker: UnsendMarker::default(),
       },
       WebSocketWrite {
         stream: w,
         write_half: write,
-        _marker: UnsendMarker::default(),
       },
     )
   }
@@ -498,7 +486,7 @@ impl<'f, S> WebSocket<S> {
     frame: Frame<'f>,
   ) -> Result<(), WebSocketError>
   where
-    S: AsyncReadExt + AsyncWriteExt + Unpin,
+    S: AsyncReadExt + AsyncWriteExt + Unpin + Send,
   {
     self.write_half.write_frame(&mut self.stream, frame).await?;
     Ok(())
@@ -532,7 +520,7 @@ impl<'f, S> WebSocket<S> {
   /// ```
   pub async fn read_frame(&mut self) -> Result<Frame<'f>, WebSocketError>
   where
-    S: AsyncReadExt + AsyncWriteExt + Unpin,
+    S: AsyncReadExt + AsyncWriteExt + Unpin + Send,
   {
     loop {
       let (res, obligated_send) =
@@ -570,15 +558,12 @@ impl ReadHalf {
   /// `auto_close` or `auto_pong` are enabled. Callers to this function are obligated to send the
   /// frame in the latter half of the tuple if one is specified, unless the write half of this socket
   /// has been closed.
-  ///
-  /// XXX: Do not expose this method to the public API.
-  /// Lifetime requirements for safe recv buffer use are not enforced.
   pub(crate) async fn read_frame_inner<'f, S>(
     &mut self,
     stream: &mut S,
   ) -> (Result<Option<Frame<'f>>, WebSocketError>, Option<Frame<'f>>)
   where
-    S: AsyncReadExt + Unpin,
+    S: AsyncReadExt + Unpin + Send,
   {
     let mut frame = match self.parse_frame_header(stream).await {
       Ok(frame) => frame,
@@ -640,7 +625,7 @@ impl ReadHalf {
     stream: &mut S,
   ) -> Result<Frame<'a>, WebSocketError>
   where
-    S: AsyncReadExt + Unpin,
+    S: AsyncReadExt + Unpin + Send,
   {
     macro_rules! eof {
       ($n:expr) => {{
@@ -652,13 +637,8 @@ impl ReadHalf {
       }};
     }
 
-    let head = recv::init_once();
-    let mut nread = 0;
-
-    if let Some(spill) = self.spill.take() {
-      head[..spill.len()].copy_from_slice(&spill);
-      nread += spill.len();
-    }
+    let mut nread = self.spill.as_ref().map(|v| v.len()).unwrap_or(0);
+    let mut head = self.spill.take().unwrap_or(vec![0u8; RECV_SIZE]);
 
     while nread < 2 {
       nread += eof!(stream.read(&mut head[nread..]).await?);
@@ -735,7 +715,7 @@ impl ReadHalf {
     let required = 2 + extra + mask.map(|_| 4).unwrap_or(0) + length;
     if required > nread {
       // Allocate more space
-      let mut new_head = head.to_vec();
+      let mut new_head = head.clone();
       new_head.resize(required, 0);
 
       stream.read_exact(&mut new_head[nread..]).await?;
@@ -750,12 +730,8 @@ impl ReadHalf {
       self.spill = Some(head[required..nread].to_vec());
     }
 
-    let payload = &mut head[required - length..required];
-    let payload = if payload.len() > self.writev_threshold {
-      Payload::BorrowedMut(payload)
-    } else {
-      Payload::Owned(payload.to_vec())
-    };
+    let payload = &head[required - length..required];
+    let payload = Payload::Owned(payload.to_vec());
     let frame = Frame::new(fin, opcode, mask, payload);
     Ok(frame)
   }
@@ -780,7 +756,7 @@ impl WriteHalf {
     mut frame: Frame<'a>,
   ) -> Result<(), WebSocketError>
   where
-    S: AsyncWriteExt + Unpin,
+    S: AsyncWriteExt + Unpin + Send,
   {
     if self.role == Role::Client && self.auto_apply_mask {
       frame.mask();

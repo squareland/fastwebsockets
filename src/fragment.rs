@@ -17,7 +17,6 @@ use std::future::Future;
 
 use crate::error::WebSocketError;
 use crate::frame::Frame;
-use crate::recv::SharedRecv;
 use crate::OpCode;
 use crate::ReadHalf;
 use crate::WebSocket;
@@ -80,23 +79,20 @@ pub struct FragmentCollector<S> {
   read_half: ReadHalf,
   write_half: WriteHalf,
   fragments: Fragments,
-  // !Sync marker
-  _marker: std::marker::PhantomData<SharedRecv>,
 }
 
 impl<'f, S> FragmentCollector<S> {
   /// Creates a new `FragmentCollector` with the provided `WebSocket`.
-  pub fn new(ws: WebSocket<S>) -> FragmentCollector<S>
+  pub fn new(ws: WebSocket<S>) -> Self
   where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
   {
     let (stream, read_half, write_half) = ws.into_parts_internal();
-    FragmentCollector {
+    Self {
       stream,
       read_half,
       write_half,
       fragments: Fragments::new(),
-      _marker: std::marker::PhantomData,
     }
   }
 
@@ -105,7 +101,7 @@ impl<'f, S> FragmentCollector<S> {
   /// Text frames payload is guaranteed to be valid UTF-8.
   pub async fn read_frame(&mut self) -> Result<Frame<'f>, WebSocketError>
   where
-    S: AsyncReadExt + AsyncWriteExt + Unpin,
+    S: AsyncReadExt + AsyncWriteExt + Unpin + Send,
   {
     loop {
       let (res, obligated_send) =
@@ -134,7 +130,7 @@ impl<'f, S> FragmentCollector<S> {
     frame: Frame<'f>,
   ) -> Result<(), WebSocketError>
   where
-    S: AsyncReadExt + AsyncWriteExt + Unpin,
+    S: AsyncReadExt + AsyncWriteExt + Unpin + Send,
   {
     self.write_half.write_frame(&mut self.stream, frame).await?;
     Ok(())
@@ -146,23 +142,20 @@ pub struct FragmentCollectorRead<S> {
   stream: S,
   read_half: ReadHalf,
   fragments: Fragments,
-  // !Sync marker
-  _marker: std::marker::PhantomData<SharedRecv>,
 }
 
 #[cfg(feature = "unstable-split")]
 impl<'f, S> FragmentCollectorRead<S> {
   /// Creates a new `FragmentCollector` with the provided `WebSocket`.
-  pub fn new(ws: WebSocketRead<S>) -> FragmentCollectorRead<S>
+  pub fn new(ws: WebSocketRead<S>) -> Self
   where
-    S: AsyncReadExt + Unpin,
+    S: AsyncReadExt + Unpin + Send,
   {
     let (stream, read_half) = ws.into_parts_internal();
-    FragmentCollectorRead {
+    Self {
       stream,
       read_half,
       fragments: Fragments::new(),
-      _marker: std::marker::PhantomData,
     }
   }
 
@@ -174,7 +167,7 @@ impl<'f, S> FragmentCollectorRead<S> {
     send_fn: &mut impl FnMut(Frame<'f>) -> R,
   ) -> Result<Frame<'f>, WebSocketError>
   where
-    S: AsyncReadExt + Unpin,
+    S: AsyncReadExt + Unpin + Send,
     E: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
     R: Future<Output = Result<(), E>>,
   {
