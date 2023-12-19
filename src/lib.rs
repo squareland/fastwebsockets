@@ -781,6 +781,10 @@ impl WriteHalf {
       stream.write_all(text).await?;
     }
 
+    if frame.fin {
+      stream.flush().await?;
+    }
+
     Ok(())
   }
 }
