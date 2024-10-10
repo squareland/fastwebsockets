@@ -26,8 +26,8 @@ use hyper_util::rt::TokioIo;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 
-use tokio::io::AsyncRead;
-use tokio::io::AsyncWrite;
+use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWriteExt;
 use tokio_rustls::rustls::ClientConfig;
 use tokio_rustls::rustls::OwnedTrustAnchor;
 use tokio_rustls::TlsConnector;
@@ -96,7 +96,7 @@ pub async fn client<S, E, B>(
   socket: S,
 ) -> Result<(WebSocket<TokioIo<Upgraded>>, Response<Incoming>), WebSocketError>
 where
-  S: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+  S: AsyncReadExt + AsyncWriteExt + Send + Unpin + 'static,
   E: hyper::rt::Executor<Pin<Box<dyn Future<Output = ()> + Send>>>,
   B: hyper::body::Body + 'static + Send,
   B::Data: Send,
@@ -128,7 +128,7 @@ pub fn generate_key() -> String {
   // a base64-encoded (see Section 4 of [RFC4648]) value that,
   // when decoded, is 16 bytes in length (RFC 6455)
   let r: [u8; 16] = rand::random();
-  STANDARD.encode(&r)
+  STANDARD.encode(r)
 }
 
 // https://github.com/snapview/tungstenite-rs/blob/314feea3055a93e585882fb769854a912a7e6dae/src/handshake/client.rs#L189

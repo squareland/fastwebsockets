@@ -14,9 +14,9 @@
 
 #[inline]
 fn unmask_easy(payload: &mut [u8], mask: [u8; 4]) {
-  for i in 0..payload.len() {
-    payload[i] ^= mask[i & 3];
-  }
+  payload.iter_mut().enumerate().for_each(|(i, v)| {
+    *v ^= mask[i & 3];
+  });
 }
 
 // TODO(@littledivy): Compiler does a good job at auto-vectorizing `unmask_fallback` with
@@ -125,7 +125,7 @@ fn unmask_fallback(buf: &mut [u8], mask: [u8; 4]) {
 /// Unmask a payload using the given 4-byte mask.
 #[inline]
 pub fn unmask(payload: &mut [u8], mask: [u8; 4]) {
-  return unmask_fallback(payload, mask);
+  unmask_fallback(payload, mask);
 }
 
 #[cfg(test)]

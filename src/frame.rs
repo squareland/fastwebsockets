@@ -15,7 +15,7 @@
 use tokio::io::AsyncWriteExt;
 
 use core::ops::Deref;
-
+use bytes::BytesMut;
 use crate::WebSocketError;
 
 macro_rules! repr_u8 {
@@ -44,6 +44,7 @@ pub enum Payload<'a> {
   BorrowedMut(&'a mut [u8]),
   Borrowed(&'a [u8]),
   Owned(Vec<u8>),
+  Bytes(BytesMut),
 }
 
 impl<'a> core::fmt::Debug for Payload<'a> {
@@ -60,6 +61,7 @@ impl Deref for Payload<'_> {
       Payload::Borrowed(borrowed) => borrowed,
       Payload::BorrowedMut(borrowed_mut) => borrowed_mut,
       Payload::Owned(owned) => owned.as_ref(),
+      Payload::Bytes(bytes) => bytes.as_ref(),
     }
   }
 }
@@ -88,11 +90,13 @@ impl From<Payload<'_>> for Vec<u8> {
       Payload::Borrowed(borrowed) => borrowed.to_vec(),
       Payload::BorrowedMut(borrowed_mut) => borrowed_mut.to_vec(),
       Payload::Owned(owned) => owned,
+      Payload::Bytes(bytes) => bytes.to_vec(),
     }
   }
 }
 
 impl Payload<'_> {
+  #[inline(always)]
   pub fn to_mut(&mut self) -> &mut [u8] {
     match self {
       Payload::Borrowed(borrowed) => {
@@ -104,6 +108,7 @@ impl Payload<'_> {
       }
       Payload::BorrowedMut(borrowed) => borrowed,
       Payload::Owned(ref mut owned) => owned,
+      Payload::Bytes(bytes) => bytes.as_mut(),
     }
   }
 }
@@ -300,7 +305,7 @@ impl<'f> Frame<'f> {
       return Ok(());
     }
 
-    // Slighly more optimized than (unstable) write_all_vectored for 2 iovecs.
+    // Slightly more optimized than (unstable) write_all_vectored for 2 iovecs.
     while n <= size {
       b[0] = IoSlice::new(&head[n..size]);
       n += stream.write_vectored(&b).await?;
