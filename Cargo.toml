@@ -24,7 +24,7 @@ required-features = ["upgrade"]
 
 [dependencies]
 tokio = { version = "1.25.0",  default-features = false, features = ["io-util", "tracing"] }
-tokio-rustls = "0.26.0"
+tokio-rustls = "0.25.0"
 webpki-roots = "0.26.6"
 simdutf8 = { version = "0.1.4", optional = true }
 hyper-util = { version = "0.1.0", features = ["tokio"], optional = true }
@@ -46,7 +46,7 @@ unstable-split = []
 
 [dev-dependencies]
 tokio = { version = "1.25.0", features = ["full", "macros"] }
-tokio-rustls = "0.26.0"
+tokio-rustls = "0.25.0"
 rustls-pemfile = "2.2.0"
 hyper-util = { version = "0.1.0", features = ["tokio"] }
 http-body-util = { version = "0.1.0" }
