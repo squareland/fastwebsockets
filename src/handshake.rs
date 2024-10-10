@@ -29,7 +29,6 @@ use base64::Engine;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio_rustls::rustls::ClientConfig;
-use tokio_rustls::rustls::OwnedTrustAnchor;
 use tokio_rustls::TlsConnector;
 
 use std::future::Future;
@@ -306,7 +305,7 @@ pub async fn connect<R, B>(
       .map_err(|v| WebSocketError::IoError(v))?;
 
   if port == 443 {
-    let domain = tokio_rustls::rustls::ServerName::try_from(host)
+    let domain = tokio_rustls::rustls::pki_types::ServerName::try_from(host)
         .map_err(|_| {
           std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid dnsname")
         })?
@@ -321,20 +320,9 @@ pub async fn connect<R, B>(
 }
 
 fn tls_connector() -> Result<TlsConnector, WebSocketError> {
-  let mut root_store = tokio_rustls::rustls::RootCertStore::empty();
-
-  root_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
-    |ta| {
-      OwnedTrustAnchor::from_subject_spki_name_constraints(
-        ta.subject,
-        ta.spki,
-        ta.name_constraints,
-      )
-    },
-  ));
+  let root_store = tokio_rustls::rustls::RootCertStore::empty();
 
   let config = ClientConfig::builder()
-      .with_safe_defaults()
       .with_root_certificates(root_store)
       .with_no_client_auth();
 
