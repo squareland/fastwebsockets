@@ -246,7 +246,7 @@ impl IntoClientRequest<Empty<Bytes>> for Uri {
 /// #[tokio::test]
 /// async fn simple() -> Result<(), fastwebsockets::WebSocketError> {
 ///   let url = "wss://fstream.binance.com/ws/Estn2SL73HZfTdKCetdGmWPKrT0gpdl0JUnV9QgkZnUZ2eMwtTbcN42zTOOtxAe9";
-///   let mut ws = fastwebsockets::handshake::connect(url).await?;
+///   let mut ws = fastwebsockets::handshake::connect(url, None).await?;
 ///   let json = r#"
 ///   {
 ///     "method": "REQUEST",
@@ -271,6 +271,7 @@ impl IntoClientRequest<Empty<Bytes>> for Uri {
 /// ```
 pub async fn connect<R, B>(
   request: R,
+  sni: Option<&str>,
 ) -> Result<WebSocket<TokioIo<Upgraded>>, WebSocketError>
   where
       R: IntoClientRequest<B>,
@@ -306,7 +307,7 @@ pub async fn connect<R, B>(
       .map_err(|v| WebSocketError::IoError(v))?;
 
   if port == 443 {
-    let domain = tokio_rustls::rustls::ServerName::try_from(host)
+    let domain = tokio_rustls::rustls::ServerName::try_from(sni.unwrap_or(host))
         .map_err(|_| {
           std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid dnsname")
         })?

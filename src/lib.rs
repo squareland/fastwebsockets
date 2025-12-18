@@ -164,6 +164,7 @@ mod mask;
 #[cfg_attr(docsrs, doc(cfg(feature = "upgrade")))]
 pub mod upgrade;
 
+#[cfg(feature = "http-body-util")]
 pub use http_body_util as body;
 
 #[cfg(feature = "upgrade")]
